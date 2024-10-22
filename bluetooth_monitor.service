@@ -1,0 +1,11 @@
+[Unit]
+Description=Bluetooth Tethering Monitor and Detection Runner
+After=bluetooth.target
+
+[Service]
+ExecStart=/bin/bash /home/pi/bluetooth_check.sh
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
