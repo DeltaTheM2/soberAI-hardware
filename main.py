@@ -17,6 +17,7 @@ model_path = 'model_unquant.tflite'
 label_path = '/mnt/data/labels.txt'
 image_path = '/tmp/captured_image.jpg'  # Temporary location to save the captured image
 firebase_creds_path = 'path/to/firebase/credentials.json'  # Change this to your Firebase credentials path
+DEVICE_ID = "raspi-12345"
 
 # Initialize Firebase
 cred = credentials.Certificate(firebase_creds_path)
@@ -25,6 +26,28 @@ firebase_admin.initialize_app(cred, {
 })
 db = firestore.client()
 bucket = storage.bucket()
+
+def find_user_by_device_id(device_id="raspi-12345"):
+    while True:
+        try:
+            # Query Firestore to find a user with the matching device_id
+            users_ref = db.collection('users')
+            query = users_ref.where('device_id', '==', device_id).limit(1)
+            docs = query.stream()
+            
+            for doc in docs:
+                if doc.exists:
+                    print(f"User found: {doc.id}")
+                    return doc.id
+            
+            # If no document is found, wait and try again
+            print("No matching user found. Retrying in 5 seconds...")
+            time.sleep(5)
+
+        except Exception as e:
+            print(f"Error finding user document: {e}")
+            time.sleep(5)
+
 
 # ADS1115 setup
 def setup_ads1115():
@@ -95,22 +118,29 @@ def upload_image_to_firebase(image_path):
     blob.upload_from_filename(image_path)
     return blob.public_url
 
-# Store results in Firestore
-def store_in_firestore(alcohol_level, confidence, label, image_url):
-    doc_ref = db.collection('users').document('user_id').collection('tests').document('MM-dd-yyyy')
-    timestamp = time.strftime("%H:%M:%S", time.localtime())
+def store_in_firestore(alcohol_level, confidence, label, image_url, user_id):
+    # Create a unique identifier for the test document (user ID + timestamp)
+    timestamp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+    doc_name = f"{timestamp}"
+
+    # Firestore path: users/{user_id}/tests/{doc_name}
+    doc_ref = db.collection('users').document(user_id).collection('tests').document(doc_name)
+    
     test_data = {
         "time": timestamp,
         "alcohol_level": alcohol_level,
         "confidence": confidence,
         "label": label,
         "image_url": image_url,
-        "verbal_test": ""  # Placeholder for future verbal test implementation
+        "verbal_test": "",  # Placeholder for verbal test result
+        "status": "verbal_required"  # Mark as waiting for verbal test
     }
-    doc_ref.update({f"test_{timestamp}": test_data})
+    doc_ref.set(test_data)
+    print(f"Data stored in Firestore under document: {doc_name}")
 
 # Main function
 def main():
+    user_id = find_user_by_device_id(DEVICE_ID)
     ads = setup_ads1115()
     print("Detecting alcohol levels...")
 
